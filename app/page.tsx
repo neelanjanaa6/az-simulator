@@ -10,6 +10,14 @@ type Tile =
   | "park"
   | "road";
 
+type BuildingStatus =
+  | "normal"
+  | "hot"
+  | "dry"
+  | "flooded"
+  | "dusty"
+  | "overheated";
+
 type EventType =
   | "heat"
   | "drought"
@@ -86,6 +94,44 @@ const EVENTS: Record<
   },
 };
 
+const STATUS_INFO: Record<
+  BuildingStatus,
+  {
+    label: string;
+    icon: string;
+  }
+> = {
+  normal: {
+    label: "Normal",
+    icon: "",
+  },
+
+  hot: {
+    label: "Overheated",
+    icon: "🔥",
+  },
+
+  dry: {
+    label: "Drought Stress",
+    icon: "🥀",
+  },
+
+  flooded: {
+    label: "Flooded",
+    icon: "🌊",
+  },
+
+  dusty: {
+    label: "Dusty",
+    icon: "💨",
+  },
+
+  overheated: {
+    label: "Overheated",
+    icon: "☀️",
+  },
+};
+
 export default function Home() {
   const [day, setDay] = useState(1);
 
@@ -108,12 +154,232 @@ export default function Home() {
     Array(64).fill("empty")
   );
 
+  const [buildingStatuses, setBuildingStatuses] =
+    useState<BuildingStatus[]>(
+      Array(64).fill("normal")
+    );
+
   const [activeEvent, setActiveEvent] =
     useState<GameEvent | null>(null);
 
   const [message, setMessage] = useState(
     "Your new Phoenix neighborhood is ready."
   );
+
+  /*
+   * CITY ECONOMY
+   *
+   * These values control the daily economy.
+   */
+
+  function calculateDailyFinances() {
+    const houses = tiles.filter(
+      (tile) => tile === "house"
+    ).length;
+
+    const trees = tiles.filter(
+      (tile) => tile === "tree"
+    ).length;
+
+    const parks = tiles.filter(
+      (tile) => tile === "park"
+    ).length;
+
+    const solarPanels = tiles.filter(
+      (tile) => tile === "solar"
+    ).length;
+
+    const roads = tiles.filter(
+      (tile) => tile === "road"
+    ).length;
+
+    const houseIncome = houses * 300;
+    const populationIncome = population * 50;
+    const treeIncome = trees * 50;
+    const parkIncome = parks * 100;
+    const solarIncome = solarPanels * 150;
+
+    const roadMaintenance = roads * 50;
+
+    /*
+     * Arizona-specific environmental costs.
+     */
+
+    const heatCost =
+      temperature >= 115 ? 300 : 0;
+
+    const waterCost =
+      water <= 30 ? 400 : 0;
+
+    const energyCost =
+      energy <= 30 ? 300 : 0;
+
+    const totalIncome =
+      houseIncome +
+      populationIncome +
+      treeIncome +
+      parkIncome +
+      solarIncome;
+
+    const totalExpenses =
+      roadMaintenance +
+      heatCost +
+      waterCost +
+      energyCost;
+
+    const net =
+      totalIncome - totalExpenses;
+
+    return {
+      houses,
+      trees,
+      parks,
+      solarPanels,
+      roads,
+      houseIncome,
+      populationIncome,
+      treeIncome,
+      parkIncome,
+      solarIncome,
+      roadMaintenance,
+      heatCost,
+      waterCost,
+      energyCost,
+      totalIncome,
+      totalExpenses,
+      net,
+    };
+  }
+
+  const finances =
+    calculateDailyFinances();
+
+  /*
+   * Find an area that actually contains buildings.
+   */
+
+  function findOccupiedArea() {
+    const occupied = tiles
+      .map((tile, index) =>
+        tile !== "empty" ? index : -1
+      )
+      .filter((index) => index !== -1);
+
+    if (occupied.length === 0) {
+      return [27, 28, 35, 36];
+    }
+
+    const randomIndex =
+      occupied[
+        Math.floor(
+          Math.random() * occupied.length
+        )
+      ];
+
+    const row = Math.floor(randomIndex / 8);
+    const column = randomIndex % 8;
+
+    const safeRow = Math.min(row, 6);
+    const safeColumn = Math.min(column, 6);
+
+    return [
+      safeRow * 8 + safeColumn,
+      safeRow * 8 + safeColumn + 1,
+      (safeRow + 1) * 8 + safeColumn,
+      (safeRow + 1) * 8 +
+        safeColumn +
+        1,
+    ];
+  }
+
+  /*
+   * Apply an event to the actual buildings
+   * inside its affected area.
+   */
+
+  function applyEventEffects(
+    eventType: EventType,
+    area: number[]
+  ) {
+    const newStatuses = [
+      ...buildingStatuses,
+    ];
+
+    let affectedBuildings = 0;
+
+    area.forEach((index) => {
+      const building = tiles[index];
+
+      if (building === "empty") return;
+
+      affectedBuildings++;
+
+      if (eventType === "heat") {
+        if (building === "house") {
+          newStatuses[index] = "hot";
+        }
+
+        if (building === "solar") {
+          newStatuses[index] =
+            "overheated";
+        }
+
+        if (building === "tree") {
+          newStatuses[index] = "dry";
+        }
+
+        if (building === "park") {
+          newStatuses[index] = "dry";
+        }
+      }
+
+      if (eventType === "drought") {
+        if (
+          building === "tree" ||
+          building === "park"
+        ) {
+          newStatuses[index] = "dry";
+        }
+
+        if (building === "house") {
+          newStatuses[index] = "dry";
+        }
+      }
+
+      if (eventType === "monsoon") {
+        if (
+          building === "house" ||
+          building === "road"
+        ) {
+          newStatuses[index] = "flooded";
+        }
+
+        if (
+          building === "tree" ||
+          building === "park"
+        ) {
+          newStatuses[index] = "flooded";
+        }
+      }
+
+      if (eventType === "dust") {
+        if (
+          building === "house" ||
+          building === "road"
+        ) {
+          newStatuses[index] = "dusty";
+        }
+
+        if (building === "tree") {
+          newStatuses[index] = "dusty";
+        }
+      }
+    });
+
+    setBuildingStatuses(newStatuses);
+
+    return affectedBuildings;
+  }
 
   function createEvent() {
     const eventTypes: EventType[] = [
@@ -130,20 +396,12 @@ export default function Home() {
         )
       ];
 
-    const startRow =
-      Math.floor(Math.random() * 6);
+    const area = findOccupiedArea();
 
-    const startColumn =
-      Math.floor(Math.random() * 6);
-
-    const area = [
-      startRow * 8 + startColumn,
-      startRow * 8 + startColumn + 1,
-      (startRow + 1) * 8 + startColumn,
-      (startRow + 1) * 8 +
-        startColumn +
-        1,
-    ];
+    applyEventEffects(
+      randomEvent,
+      area
+    );
 
     setActiveEvent({
       type: randomEvent,
@@ -151,30 +409,39 @@ export default function Home() {
     });
   }
 
+  /*
+   * ADVANCE DAY
+   */
+
   function nextDay() {
     if (activeEvent) {
       setMessage(
-        "⚠️ You need to respond to the current event first!"
+        "⚠️ Respond to the current event before starting another day."
       );
       return;
     }
 
     const newDay = day + 1;
 
+    /*
+     * Calculate the city's daily finances
+     * BEFORE environmental changes.
+     */
+
+    const daily = calculateDailyFinances();
+
+    setBudget((value) =>
+      Math.max(
+        0,
+        value + daily.net
+      )
+    );
+
     setDay(newDay);
 
     /*
-      Every third day creates a weather challenge.
-    */
-
-    if (newDay % 3 === 0) {
-      createEvent();
-      return;
-    }
-
-    /*
-      Normal daily changes.
-    */
+     * Daily resource consumption.
+     */
 
     setWater((value) =>
       Math.max(0, value - 2)
@@ -184,10 +451,67 @@ export default function Home() {
       Math.max(0, value - 2)
     );
 
-    setMessage(
-      `Day ${newDay} begins. The neighborhood is growing.`
+    /*
+     * Every third day creates a challenge.
+     */
+
+    if (newDay % 3 === 0) {
+      createEvent();
+
+      if (daily.net >= 0) {
+        setMessage(
+          `Day ${newDay}: +$${daily.net.toLocaleString()} net city income. A Phoenix weather challenge is approaching.`
+        );
+      } else {
+        setMessage(
+          `Day ${newDay}: -$${Math.abs(
+            daily.net
+          ).toLocaleString()} net expenses. A Phoenix weather challenge is approaching.`
+        );
+      }
+
+      return;
+    }
+
+    /*
+     * Gradually return buildings to normal
+     * if they survived the previous event.
+     */
+
+    setBuildingStatuses((statuses) =>
+      statuses.map((status) => {
+        if (status === "normal") {
+          return status;
+        }
+
+        if (Math.random() < 0.35) {
+          return "normal";
+        }
+
+        return status;
+      })
     );
+
+    if (daily.net > 0) {
+      setMessage(
+        `Day ${newDay} begins. Your city earned $${daily.net.toLocaleString()} today.`
+      );
+    } else if (daily.net < 0) {
+      setMessage(
+        `Day ${newDay} begins. Your city spent $${Math.abs(
+          daily.net
+        ).toLocaleString()} today.`
+      );
+    } else {
+      setMessage(
+        `Day ${newDay} begins. Your neighborhood broke even today.`
+      );
+    }
   }
+
+  /*
+   * WEATHER EVENT CHOICES
+   */
 
   function handleEventChoice(
     choice:
@@ -200,11 +524,16 @@ export default function Home() {
   ) {
     if (!activeEvent) return;
 
-    const event = activeEvent.type;
+    const event =
+      activeEvent.type;
+
+    const newStatuses = [
+      ...buildingStatuses,
+    ];
 
     /*
-      HEAT WAVE
-    */
+     * HEAT WAVE
+     */
 
     if (event === "heat") {
       if (choice === "solar") {
@@ -215,7 +544,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 4000);
+        setBudget(
+          (value) => value - 4000
+        );
 
         setEnergy((value) =>
           Math.min(100, value + 10)
@@ -225,8 +556,19 @@ export default function Home() {
           Math.max(70, value - 2)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] === "house"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "☀️ Solar panels helped the neighborhood handle the heat."
+          "☀️ Solar power helped the neighborhood handle the heat."
         );
       }
 
@@ -238,7 +580,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 1000);
+        setBudget(
+          (value) => value - 1000
+        );
 
         setTemperature((value) =>
           Math.max(70, value - 4)
@@ -248,8 +592,20 @@ export default function Home() {
           Math.min(100, value + 5)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] === "house" ||
+              tiles[index] === "tree"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "🌳 New shade trees helped cool the affected area."
+          "🌳 Shade trees protected the affected neighborhood."
         );
       }
 
@@ -261,7 +617,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 2000);
+        setBudget(
+          (value) => value - 2000
+        );
 
         setHappiness((value) =>
           Math.min(100, value + 8)
@@ -269,6 +627,17 @@ export default function Home() {
 
         setEnergy((value) =>
           Math.max(0, value - 3)
+        );
+
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] === "house"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
         );
 
         setMessage(
@@ -290,14 +659,14 @@ export default function Home() {
         );
 
         setMessage(
-          "🔥 The heat wave hit the neighborhood hard."
+          "🔥 The heat wave damaged buildings in the affected area."
         );
       }
     }
 
     /*
-      DROUGHT
-    */
+     * DROUGHT
+     */
 
     if (event === "drought") {
       if (choice === "conserve") {
@@ -309,8 +678,20 @@ export default function Home() {
           Math.max(0, value - 1)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] === "tree" ||
+              tiles[index] === "park"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "💧 Water conservation helped your city get through the shortage."
+          "💧 Water conservation protected the neighborhood."
         );
       }
 
@@ -322,7 +703,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 1000);
+        setBudget(
+          (value) => value - 1000
+        );
 
         setWater((value) =>
           Math.max(0, value - 3)
@@ -332,8 +715,20 @@ export default function Home() {
           Math.min(100, value + 5)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] === "tree" ||
+              tiles[index] === "park"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "🌳 Native landscaping reduced water demand."
+          "🌳 Native landscaping reduced the impact of the drought."
         );
       }
 
@@ -347,14 +742,14 @@ export default function Home() {
         );
 
         setMessage(
-          "💧 The drought caused serious water shortages."
+          "💧 The drought stressed buildings and landscaping."
         );
       }
     }
 
     /*
-      MONSOON
-    */
+     * MONSOON
+     */
 
     if (event === "monsoon") {
       if (choice === "drainage") {
@@ -365,7 +760,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 3000);
+        setBudget(
+          (value) => value - 3000
+        );
 
         setWater((value) =>
           Math.min(100, value + 12)
@@ -375,8 +772,20 @@ export default function Home() {
           Math.min(100, value + 4)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              buildingStatuses[index] ===
+              "flooded"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "🌧️ Your drainage system handled the monsoon."
+          "🌧️ New drainage protected the affected area from flooding."
         );
       }
 
@@ -388,7 +797,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 1000);
+        setBudget(
+          (value) => value - 1000
+        );
 
         setWater((value) =>
           Math.min(100, value + 8)
@@ -398,8 +809,20 @@ export default function Home() {
           Math.min(100, value + 3)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] === "tree" ||
+              tiles[index] === "park"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "🌳 Trees helped absorb some of the stormwater."
+          "🌳 Green spaces helped absorb stormwater."
         );
       }
 
@@ -417,14 +840,14 @@ export default function Home() {
         );
 
         setMessage(
-          "🌧️ Flooding damaged part of the neighborhood."
+          "🌧️ Flooding damaged the affected buildings and roads."
         );
       }
     }
 
     /*
-      DUST STORM
-    */
+     * DUST STORM
+     */
 
     if (event === "dust") {
       if (choice === "trees") {
@@ -435,7 +858,9 @@ export default function Home() {
           return;
         }
 
-        setBudget((value) => value - 1000);
+        setBudget(
+          (value) => value - 1000
+        );
 
         setHappiness((value) =>
           Math.min(100, value + 5)
@@ -445,8 +870,19 @@ export default function Home() {
           Math.min(100, value + 3)
         );
 
+        activeEvent.area.forEach(
+          (index) => {
+            if (
+              tiles[index] !== "empty"
+            ) {
+              newStatuses[index] =
+                "normal";
+            }
+          }
+        );
+
         setMessage(
-          "🌳 Trees acted as a windbreak during the dust storm."
+          "🌳 Windbreak trees reduced the dust storm's impact."
         );
       }
 
@@ -460,18 +896,27 @@ export default function Home() {
         );
 
         setMessage(
-          "💨 The dust storm made life difficult for residents."
+          "💨 Dust covered the affected part of the neighborhood."
         );
       }
     }
 
+    setBuildingStatuses(
+      newStatuses
+    );
+
     setActiveEvent(null);
   }
 
+  /*
+   * RESET CITY
+   */
+
   function resetCity() {
-    const confirmed = window.confirm(
-      "Are you sure you want to reset your city?"
-    );
+    const confirmed =
+      window.confirm(
+        "Are you sure you want to reset your city?"
+      );
 
     if (!confirmed) return;
 
@@ -482,7 +927,15 @@ export default function Home() {
     setEnergy(100);
     setHappiness(50);
     setPopulation(0);
-    setTiles(Array(64).fill("empty"));
+
+    setTiles(
+      Array(64).fill("empty")
+    );
+
+    setBuildingStatuses(
+      Array(64).fill("normal")
+    );
+
     setActiveEvent(null);
 
     setMessage(
@@ -490,13 +943,23 @@ export default function Home() {
     );
   }
 
-  function build(index: number) {
-    if (tiles[index] !== "empty") return;
+  /*
+   * BUILD
+   */
 
-    if (activeEvent?.area.includes(index)) {
+  function build(index: number) {
+    if (tiles[index] !== "empty")
+      return;
+
+    if (
+      activeEvent?.area.includes(
+        index
+      )
+    ) {
       setMessage(
         "⚠️ This area is currently affected by a weather event."
       );
+
       return;
     }
 
@@ -511,68 +974,114 @@ export default function Home() {
       setMessage(
         "💰 You don't have enough money."
       );
+
       return;
     }
 
     const newTiles = [...tiles];
 
-    newTiles[index] = selectedTool;
+    newTiles[index] =
+      selectedTool;
 
     setTiles(newTiles);
 
-    setBudget(
-      (value) => value - building.cost
+    const newStatuses = [
+      ...buildingStatuses,
+    ];
+
+    newStatuses[index] =
+      "normal";
+
+    setBuildingStatuses(
+      newStatuses
     );
 
-    if (selectedTool === "house") {
+    setBudget(
+      (value) =>
+        value - building.cost
+    );
+
+    if (
+      selectedTool === "house"
+    ) {
       setPopulation(
         (value) => value + 2
       );
 
       setHappiness(
         (value) =>
-          Math.min(100, value + 3)
+          Math.min(
+            100,
+            value + 3
+          )
       );
 
       setEnergy(
         (value) =>
-          Math.max(0, value - 5)
+          Math.max(
+            0,
+            value - 5
+          )
       );
 
       setWater(
         (value) =>
-          Math.max(0, value - 3)
+          Math.max(
+            0,
+            value - 3
+          )
       );
     }
 
-    if (selectedTool === "tree") {
+    if (
+      selectedTool === "tree"
+    ) {
       setTemperature(
         (value) =>
-          Math.max(70, value - 2)
+          Math.max(
+            70,
+            value - 2
+          )
       );
 
       setHappiness(
         (value) =>
-          Math.min(100, value + 2)
+          Math.min(
+            100,
+            value + 2
+          )
       );
     }
 
-    if (selectedTool === "park") {
+    if (
+      selectedTool === "park"
+    ) {
       setTemperature(
         (value) =>
-          Math.max(70, value - 3)
+          Math.max(
+            70,
+            value - 3
+          )
       );
 
       setHappiness(
         (value) =>
-          Math.min(100, value + 5)
+          Math.min(
+            100,
+            value + 5
+          )
       );
     }
 
-    if (selectedTool === "solar") {
+    if (
+      selectedTool === "solar"
+    ) {
       setEnergy(
         (value) =>
-          Math.min(100, value + 6)
+          Math.min(
+            100,
+            value + 6
+          )
       );
     }
 
@@ -583,7 +1092,9 @@ export default function Home() {
 
   const currentEvent =
     activeEvent
-      ? EVENTS[activeEvent.type]
+      ? EVENTS[
+          activeEvent.type
+        ]
       : null;
 
   return (
@@ -628,7 +1139,6 @@ export default function Home() {
         </div>
 
       </div>
-
 
       {/* HUD */}
 
@@ -682,12 +1192,11 @@ export default function Home() {
 
       </div>
 
-
       {/* GAME */}
 
       <section className="mx-auto max-w-6xl px-4 pb-8 pt-6">
 
-        <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
+        <div className="grid gap-5 lg:grid-cols-[250px_1fr]">
 
           {/* BUILD MENU */}
 
@@ -703,7 +1212,9 @@ export default function Home() {
 
             <div className="mt-5 space-y-2">
 
-              {(Object.keys(BUILDINGS) as Tile[]).map(
+              {(Object.keys(
+                BUILDINGS
+              ) as Tile[]).map(
                 (type) => {
                   const building =
                     BUILDINGS[
@@ -715,10 +1226,13 @@ export default function Home() {
                       key={type}
                       type="button"
                       onClick={() =>
-                        setSelectedTool(type)
+                        setSelectedTool(
+                          type
+                        )
                       }
                       className={`flex w-full items-center justify-between rounded-xl border-2 p-3 text-left ${
-                        selectedTool === type
+                        selectedTool ===
+                        type
                           ? "border-[#ffd86b] bg-[#8b3f55]"
                           : "border-[#4b3443] bg-[#211a26]"
                       }`}
@@ -727,17 +1241,22 @@ export default function Home() {
                       <span className="flex items-center gap-3">
 
                         <span className="text-2xl">
-                          {building.emoji}
+                          {
+                            building.emoji
+                          }
                         </span>
 
                         <span>
 
                           <span className="block font-bold">
-                            {building.name}
+                            {
+                              building.name
+                            }
                           </span>
 
                           <span className="text-xs text-[#cdb7a4]">
-                            ${building.cost.toLocaleString()}
+                            $
+                            {building.cost.toLocaleString()}
                           </span>
 
                         </span>
@@ -751,15 +1270,172 @@ export default function Home() {
 
             </div>
 
+            {/* DAILY FINANCES */}
 
-            {/* GAME CONTROLS */}
+            <div className="mt-6 rounded-xl border-2 border-[#4b3443] bg-[#211a26] p-3">
+
+              <div className="flex items-center justify-between">
+
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-[#e8a85a]">
+                  Daily Finances
+                </p>
+
+                <span
+                  className={`text-sm font-black ${
+                    finances.net >= 0
+                      ? "text-green-300"
+                      : "text-red-300"
+                  }`}
+                >
+                  {finances.net >= 0
+                    ? "+"
+                    : "-"}
+                  $
+                  {Math.abs(
+                    finances.net
+                  ).toLocaleString()}
+                </span>
+
+              </div>
+
+              <div className="mt-3 space-y-2 text-xs">
+
+                <div className="flex justify-between">
+                  <span>
+                    🏠 Houses
+                  </span>
+                  <span className="text-green-300">
+                    +$
+                    {finances.houseIncome.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>
+                    👥 Residents
+                  </span>
+                  <span className="text-green-300">
+                    +$
+                    {finances.populationIncome.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>
+                    🌳 Green spaces
+                  </span>
+                  <span className="text-green-300">
+                    +$
+                    {(
+                      finances.treeIncome +
+                      finances.parkIncome
+                    ).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>
+                    ☀️ Solar
+                  </span>
+                  <span className="text-green-300">
+                    +$
+                    {finances.solarIncome.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="my-2 border-t border-[#4b3443]" />
+
+                <div className="flex justify-between">
+                  <span>
+                    🛣️ Roads
+                  </span>
+                  <span className="text-red-300">
+                    -$
+                    {finances.roadMaintenance.toLocaleString()}
+                  </span>
+                </div>
+
+                {finances.heatCost >
+                  0 && (
+                  <div className="flex justify-between">
+                    <span>
+                      🔥 Heat
+                    </span>
+                    <span className="text-red-300">
+                      -$
+                      {finances.heatCost.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
+                {finances.waterCost >
+                  0 && (
+                  <div className="flex justify-between">
+                    <span>
+                      💧 Water shortage
+                    </span>
+                    <span className="text-red-300">
+                      -$
+                      {finances.waterCost.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
+                {finances.energyCost >
+                  0 && (
+                  <div className="flex justify-between">
+                    <span>
+                      ⚡ Energy
+                    </span>
+                    <span className="text-red-300">
+                      -$
+                      {finances.energyCost.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
+                <div className="my-2 border-t border-[#4b3443]" />
+
+                <div className="flex justify-between font-black">
+                  <span>
+                    Net per day
+                  </span>
+
+                  <span
+                    className={
+                      finances.net >=
+                      0
+                        ? "text-green-300"
+                        : "text-red-300"
+                    }
+                  >
+                    {finances.net >=
+                    0
+                      ? "+"
+                      : "-"}
+                    $
+                    {Math.abs(
+                      finances.net
+                    ).toLocaleString()}
+                  </span>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* CONTROLS */}
 
             <div className="mt-6 space-y-2">
 
               <button
                 type="button"
-                onClick={nextDay}
-                disabled={!!activeEvent}
+                onClick={
+                  nextDay
+                }
+                disabled={
+                  !!activeEvent
+                }
                 className={`w-full rounded-xl px-4 py-3 font-black transition ${
                   activeEvent
                     ? "cursor-not-allowed bg-[#594451] text-[#a9919e]"
@@ -771,7 +1447,9 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={resetCity}
+                onClick={
+                  resetCity
+                }
                 className="w-full rounded-xl border-2 border-[#8b3f55] bg-[#211a26] px-4 py-3 font-black transition hover:bg-[#8b3f55]"
               >
                 🔄 Reset City
@@ -780,7 +1458,6 @@ export default function Home() {
             </div>
 
           </aside>
-
 
           {/* MAP */}
 
@@ -808,65 +1485,122 @@ export default function Home() {
 
               </div>
 
-
               {/* CITY */}
 
               <div className="grid grid-cols-8 gap-1 rounded-xl border-4 border-[#5a3030] bg-[#a85f45] p-3">
 
-                {tiles.map((tile, index) => {
+                {tiles.map(
+                  (
+                    tile,
+                    index
+                  ) => {
 
-                  const building =
-                    tile === "empty"
-                      ? null
-                      : BUILDINGS[
-                          tile as keyof typeof BUILDINGS
-                        ];
+                    const building =
+                      tile ===
+                      "empty"
+                        ? null
+                        : BUILDINGS[
+                            tile as keyof typeof BUILDINGS
+                          ];
 
-                  const affected =
-                    activeEvent?.area.includes(
-                      index
-                    );
+                    const status =
+                      buildingStatuses[
+                        index
+                      ];
 
-                  return (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => build(index)}
-                      className={`relative aspect-square rounded-md border-2 transition-all ${
-                        affected
-                          ? "animate-pulse border-red-300 bg-red-500/70 shadow-[0_0_20px_rgba(255,70,70,0.9)]"
-                          : tile === "road"
-                          ? "border-[#5c5961] bg-[#55525b]"
-                          : "border-[#a85f45] bg-[#d39154] hover:-translate-y-1 hover:border-[#ffd86b]"
-                      }`}
-                    >
+                    const affected =
+                      activeEvent?.area.includes(
+                        index
+                      );
 
-                      {affected && (
-                        <span className="absolute inset-0 flex items-center justify-center text-2xl">
-                          {currentEvent?.icon}
-                        </span>
-                      )}
+                    const statusInfo =
+                      STATUS_INFO[
+                        status
+                      ];
 
-                      {!affected &&
-                        building && (
-                          <span className="text-3xl">
-                            {building.emoji}
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() =>
+                          build(
+                            index
+                          )
+                        }
+                        title={
+                          building
+                            ? `${building.name} — ${statusInfo.label}`
+                            : "Empty desert"
+                        }
+                        className={`relative aspect-square rounded-md border-2 transition-all ${
+                          affected
+                            ? "animate-pulse border-red-300 bg-red-500/60 shadow-[0_0_20px_rgba(255,70,70,0.8)]"
+                            : status ===
+                              "flooded"
+                            ? "border-blue-300 bg-blue-500/60"
+                            : status ===
+                              "hot"
+                            ? "border-orange-300 bg-orange-500/50"
+                            : status ===
+                              "dry"
+                            ? "border-yellow-300 bg-yellow-500/40"
+                            : status ===
+                              "dusty"
+                            ? "border-gray-300 bg-gray-500/50"
+                            : status ===
+                              "overheated"
+                            ? "border-orange-200 bg-orange-400/50"
+                            : tile ===
+                              "road"
+                            ? "border-[#5c5961] bg-[#55525b]"
+                            : "border-[#a85f45] bg-[#d39154] hover:-translate-y-1 hover:border-[#ffd86b]"
+                        }`}
+                      >
+
+                        {building && (
+                          <span
+                            className={`text-3xl ${
+                              status !==
+                              "normal"
+                                ? "opacity-70"
+                                : ""
+                            }`}
+                          >
+                            {
+                              building.emoji
+                            }
                           </span>
                         )}
 
-                      {!affected &&
-                        tile === "empty" && (
+                        {!building && (
                           <span className="text-xs opacity-30">
                             🌵
                           </span>
                         )}
 
-                    </button>
-                  );
-                })}
+                        {building &&
+                          status !==
+                            "normal" && (
+                            <span className="absolute right-0 top-0 rounded-bl-md bg-[#211a26] px-1 text-xs">
+                              {
+                                statusInfo.icon
+                              }
+                            </span>
+                          )}
+
+                        {affected &&
+                          building && (
+                            <span className="absolute bottom-0 left-0 right-0 rounded-b-md bg-[#211a26]/90 px-1 text-[8px] font-black text-white">
+                              AFFECTED
+                            </span>
+                          )}
+
+                      </button>
+                    );
+                  }
+                )}
 
               </div>
-
 
               {/* MESSAGE */}
 
@@ -880,226 +1614,229 @@ export default function Home() {
 
             </div>
 
-
             {/* EVENT MODAL */}
 
-            {activeEvent && currentEvent && (
-              <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#17121c]/75 p-5 backdrop-blur-sm">
+            {activeEvent &&
+              currentEvent && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#17121c]/75 p-5 backdrop-blur-sm">
 
-                <div className="w-full max-w-lg rounded-3xl border-4 border-[#ffd86b] bg-[#211a26] p-6 shadow-[0_15px_50px_rgba(0,0,0,0.5)]">
+                  <div className="w-full max-w-lg rounded-3xl border-4 border-[#ffd86b] bg-[#211a26] p-6 shadow-[0_15px_50px_rgba(0,0,0,0.5)]">
 
-                  <div className="text-center">
+                    <div className="text-center">
 
-                    <div className="text-6xl">
-                      {currentEvent.icon}
-                    </div>
+                      <div className="text-6xl">
+                        {
+                          currentEvent.icon
+                        }
+                      </div>
 
-                    <p className="mt-3 text-xs font-black uppercase tracking-[0.3em] text-[#e8a85a]">
-                      Phoenix Weather Alert
-                    </p>
-
-                    <h2 className="mt-1 text-3xl font-black">
-                      {currentEvent.title}
-                    </h2>
-
-                    <p className="mt-3 text-[#cdb7a4]">
-                      {currentEvent.description}
-                    </p>
-
-                    <div className="mt-4 rounded-xl border-2 border-red-400/50 bg-red-500/10 p-3">
-
-                      <p className="text-sm font-bold text-red-200">
-                        ⚠️ Affected area highlighted
-                        on your map.
+                      <p className="mt-3 text-xs font-black uppercase tracking-[0.3em] text-[#e8a85a]">
+                        Phoenix Weather Alert
                       </p>
 
+                      <h2 className="mt-1 text-3xl font-black">
+                        {
+                          currentEvent.title
+                        }
+                      </h2>
+
+                      <p className="mt-3 text-[#cdb7a4]">
+                        {
+                          currentEvent.description
+                        }
+                      </p>
+
+                      <div className="mt-4 rounded-xl border-2 border-red-400/50 bg-red-500/10 p-3">
+
+                        <p className="text-sm font-bold text-red-200">
+                          ⚠️ The highlighted
+                          buildings are
+                          actually affected.
+                        </p>
+
+                      </div>
+
                     </div>
+
+                    {/* HEAT */}
+
+                    {activeEvent.type ===
+                      "heat" && (
+                      <div className="mt-5 space-y-2">
+
+                        <ChoiceButton
+                          icon="☀️"
+                          title="Install Solar Panels"
+                          description="Protect your energy supply."
+                          cost="$4,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "solar"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="🌳"
+                          title="Plant Shade Trees"
+                          description="Cool the affected area."
+                          cost="$1,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "trees"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="🏥"
+                          title="Open Cooling Center"
+                          description="Protect residents from the heat."
+                          cost="$2,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "cooling"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="❌"
+                          title="Do Nothing"
+                          description="Accept the consequences."
+                          onClick={() =>
+                            handleEventChoice(
+                              "ignore"
+                            )
+                          }
+                        />
+
+                      </div>
+                    )}
+
+                    {/* DROUGHT */}
+
+                    {activeEvent.type ===
+                      "drought" && (
+                      <div className="mt-5 space-y-2">
+
+                        <ChoiceButton
+                          icon="💧"
+                          title="Start Water Conservation"
+                          description="Reduce water demand."
+                          onClick={() =>
+                            handleEventChoice(
+                              "conserve"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="🌳"
+                          title="Use Native Landscaping"
+                          description="Improve drought resilience."
+                          cost="$1,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "trees"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="❌"
+                          title="Do Nothing"
+                          description="Accept the water shortage."
+                          onClick={() =>
+                            handleEventChoice(
+                              "ignore"
+                            )
+                          }
+                        />
+
+                      </div>
+                    )}
+
+                    {/* MONSOON */}
+
+                    {activeEvent.type ===
+                      "monsoon" && (
+                      <div className="mt-5 space-y-2">
+
+                        <ChoiceButton
+                          icon="🌧️"
+                          title="Improve Drainage"
+                          description="Protect the neighborhood from flooding."
+                          cost="$3,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "drainage"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="🌳"
+                          title="Plant More Trees"
+                          description="Help absorb stormwater."
+                          cost="$1,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "trees"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="❌"
+                          title="Do Nothing"
+                          description="Risk flooding damage."
+                          onClick={() =>
+                            handleEventChoice(
+                              "ignore"
+                            )
+                          }
+                        />
+
+                      </div>
+                    )}
+
+                    {/* DUST */}
+
+                    {activeEvent.type ===
+                      "dust" && (
+                      <div className="mt-5 space-y-2">
+
+                        <ChoiceButton
+                          icon="🌳"
+                          title="Plant Windbreak Trees"
+                          description="Reduce the impact of strong winds."
+                          cost="$1,000"
+                          onClick={() =>
+                            handleEventChoice(
+                              "trees"
+                            )
+                          }
+                        />
+
+                        <ChoiceButton
+                          icon="❌"
+                          title="Do Nothing"
+                          description="Let the storm pass naturally."
+                          onClick={() =>
+                            handleEventChoice(
+                              "ignore"
+                            )
+                          }
+                        />
+
+                      </div>
+                    )}
 
                   </div>
 
-
-                  {/* HEAT OPTIONS */}
-
-                  {activeEvent.type ===
-                    "heat" && (
-                    <div className="mt-5 space-y-2">
-
-                      <ChoiceButton
-                        icon="☀️"
-                        title="Install Solar Panels"
-                        description="Protect your energy supply."
-                        cost="$4,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "solar"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="🌳"
-                        title="Plant Shade Trees"
-                        description="Cool the affected area."
-                        cost="$1,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "trees"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="🏥"
-                        title="Open Cooling Center"
-                        description="Protect residents from the heat."
-                        cost="$2,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "cooling"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="❌"
-                        title="Do Nothing"
-                        description="Accept the consequences."
-                        onClick={() =>
-                          handleEventChoice(
-                            "ignore"
-                          )
-                        }
-                      />
-
-                    </div>
-                  )}
-
-
-                  {/* DROUGHT OPTIONS */}
-
-                  {activeEvent.type ===
-                    "drought" && (
-                    <div className="mt-5 space-y-2">
-
-                      <ChoiceButton
-                        icon="💧"
-                        title="Start Water Conservation"
-                        description="Reduce water demand."
-                        onClick={() =>
-                          handleEventChoice(
-                            "conserve"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="🌳"
-                        title="Plant Native Landscaping"
-                        description="Reduce long-term water use."
-                        cost="$1,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "trees"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="❌"
-                        title="Do Nothing"
-                        description="Accept the water shortage."
-                        onClick={() =>
-                          handleEventChoice(
-                            "ignore"
-                          )
-                        }
-                      />
-
-                    </div>
-                  )}
-
-
-                  {/* MONSOON OPTIONS */}
-
-                  {activeEvent.type ===
-                    "monsoon" && (
-                    <div className="mt-5 space-y-2">
-
-                      <ChoiceButton
-                        icon="🌧️"
-                        title="Improve Drainage"
-                        description="Protect the neighborhood from flooding."
-                        cost="$3,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "drainage"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="🌳"
-                        title="Plant More Trees"
-                        description="Help absorb stormwater."
-                        cost="$1,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "trees"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="❌"
-                        title="Do Nothing"
-                        description="Risk flooding damage."
-                        onClick={() =>
-                          handleEventChoice(
-                            "ignore"
-                          )
-                        }
-                      />
-
-                    </div>
-                  )}
-
-
-                  {/* DUST OPTIONS */}
-
-                  {activeEvent.type ===
-                    "dust" && (
-                    <div className="mt-5 space-y-2">
-
-                      <ChoiceButton
-                        icon="🌳"
-                        title="Plant Windbreak Trees"
-                        description="Reduce the impact of strong winds."
-                        cost="$1,000"
-                        onClick={() =>
-                          handleEventChoice(
-                            "trees"
-                          )
-                        }
-                      />
-
-                      <ChoiceButton
-                        icon="❌"
-                        title="Do Nothing"
-                        description="Let the storm pass naturally."
-                        onClick={() =>
-                          handleEventChoice(
-                            "ignore"
-                          )
-                        }
-                      />
-
-                    </div>
-                  )}
-
                 </div>
-
-              </div>
-            )}
+              )}
 
           </div>
 
@@ -1110,7 +1847,6 @@ export default function Home() {
     </main>
   );
 }
-
 
 function Stat({
   icon,
@@ -1135,7 +1871,6 @@ function Stat({
     </div>
   );
 }
-
 
 function ChoiceButton({
   icon,
